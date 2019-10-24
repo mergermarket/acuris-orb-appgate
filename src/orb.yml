@@ -1,0 +1,76 @@
+version: "2.1"
+description: |
+  Install and configure AppGate SDP. Connect to our
+  controller to give access to Acuris infra
+
+examples:
+    basic:
+      description: |
+        Create connection and run simple cURL test 
+
+      usage:
+        version: 2.1
+        description: test connection to AWS infra
+
+        orbs:
+          appgate: acuris/appgate@0.3.0
+
+        jobs:
+          test-appgate-connect:
+            executor: appgate/vpn-exec
+            steps:
+              - appgate/connect
+              - run:
+                  name: smoke-test-aslive
+                  command: |
+                    curl --fail --show-error -o /dev/null -D - https://aslive-setup.dev.mergermarket.it/setup.sh
+
+        workflows:
+          connect-test:
+            jobs:
+              - test-appgate-connect:
+                  context: AppGate
+
+executors:
+  vpn-exec:
+    machine: 
+      image: ubuntu-1604:201903-01
+
+commands:
+  connect:
+    description: Connect to Appgate
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - appgate-packages-v3-
+      - run:
+          name: Download file
+          command: |
+            if [ ! -f appgate-sdp-headless_4.2.2_amd64.deb ] ; then
+              wget https://sdpdownloads.cyxtera.com/AppGate-SDP-4.2/clients/appgate-sdp-headless_4.2.2_amd64.deb 
+            fi
+      - save_cache:
+          paths:
+            - ./appgate-sdp-headless_4.2.2_amd64.deb
+          key: appgate-packages-v3-{{ checksum "appgate-sdp-headless_4.2.2_amd64.deb" }}
+      - run:
+          name: Install Appgate 
+          command: |
+            sudo apt-get update
+            sudo apt-get install ./appgate-sdp-headless_4.2.2_amd64.deb -y
+      - run:
+          name: Setup AppGate Config
+          command: |
+            sudo sh -c "echo ${APPGATE_CONF} | base64 --decode > /etc/appgate.conf"
+            sudo sh -c "echo ${APPGATE_CERT} | base64 --decode > /etc/ssl/certs/AppGate_SDP.pem"
+      - run:
+          name: Reload Config
+          command: |
+            sudo appgate_service_configurator reload
+      - run:
+          name: Check Config
+          command: |
+            sudo appgate_service_configurator getconfig
+            sleep 10
+            sudo appgate_service_configurator status
